@@ -1,4 +1,3 @@
-OPENAI_API_KEY = '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'
+OPENAI_API_KEY = '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'
 FMP_API_KEY = '21b53b6b47bfb532a11f5222a21e0ce8'
-
 
