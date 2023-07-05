@@ -1,3 +1,4 @@
+import xlsxwriter
 from urllib.request import urlopen
 import openai
 import pandas as pd
@@ -98,9 +99,21 @@ def generate_financial_summary(financial_statements, statement_type, ticker):
         elif statement_type == "Cash Flow":
             summary = f"""
                 For the period ending {row['date']}, the company reported the following:
-                Operating Cash Flow: {row['operatingCashflow']}
-                Investing Cash Flow: {row['cashFlowFromInvestment']}
-                Financing Cash Flow: {row['cashFlowFromFinancing']}
+                Change in working capital: {row['changeInWorkingCapital']}
+                Accounts Receivable: {row['accountsReceivables']}
+                Inventory: {row['inventory']}
+                Accounts Payable: {row['accountsPayables']}
+                Operating Cash Flow: {row['netCashProvidedByOperatingActivities']}
+                Investing Cash Flow: {row['netCashUsedForInvestingActivites']}
+                Debt Repayment: {row['debtRepayment']}
+                Common Stock Issued: {row['commonStockIssued']}
+                common Stock Repurchased: {row['commonStockRepurchased']}
+                Dividends Paid: {row['dividendsPaid']}
+                Financing Cash Flow: {row['netCashUsedProvidedByFinancingActivities']}
+                ...
+                Operating CashFlow: {row['operatingCashFlow']}
+                Capital Expenditure: {row['capitalExpenditure']}
+                free Cash Flow: {row['freeCashFlow']}
                 ...
                 """
         summaries.append(summary)
@@ -132,35 +145,109 @@ def generate_financial_summary(financial_statements, statement_type, ticker):
 
 
     )
-    # Save the response to a file as text file
-    with open("response.txt", "w") as f:
-        f.write(response['choices'][0]['message']['content'])
-    # move the file to the data folder
-    os.rename("response.txt", f"{ticker}_financial_analysis.txt")
 
     # Return the response
 
     return response['choices'][0]['message']['content']
 
 
+def build_excel_model(income_statements, balance_sheets, cash_flows, ticker):
+    """
+    Build an Excel model with consolidated financial statements for forecasting.
+    """
+
+    # Create a new Excel file
+    excel_file = f"{ticker}_financial_model.xlsx"
+    workbook = xlsxwriter.Workbook(excel_file)
+
+    # Create worksheets for the financial statements
+    income_sheet = workbook.add_worksheet("Income Statement")
+    balance_sheet = workbook.add_worksheet("Balance Sheet")
+    cash_flow_sheet = workbook.add_worksheet("Cash Flow")
+
+    # Transpose the dataframes
+    income_statements = income_statements.transpose()
+    balance_sheets = balance_sheets.transpose()
+    cash_flows = cash_flows.transpose()
+
+    # Write the column headers (years) for each statement
+    years = income_statements.columns
+    for col_idx, year in enumerate(years):
+        income_sheet.write(0, col_idx + 1, year)
+        balance_sheet.write(0, col_idx + 1, year)
+        cash_flow_sheet.write(0, col_idx + 1, year)
+
+    # Write the item labels and data for each statement
+    items_income = income_statements.index
+    items_balance = balance_sheets.index
+    items_cash = cash_flows.index
+
+    for row_idx, item in enumerate(items_income):
+        income_sheet.write(row_idx + 1, 0, item)
+        for col_idx, year in enumerate(years[::-1]):
+            income_sheet.write(row_idx + 1, col_idx + 1,
+                               income_statements.loc[item, year])
+
+    for row_idx, item in enumerate(items_balance):
+        balance_sheet.write(row_idx + 1, 0, item)
+        for col_idx, year in enumerate(years[::-1]):
+            balance_sheet.write(row_idx + 1, col_idx + 1,
+                                balance_sheets.loc[item, year])
+
+    for row_idx, item in enumerate(items_cash):
+        cash_flow_sheet.write(row_idx + 1, 0, item)
+        for col_idx, year in enumerate(years[::-1]):
+            cash_flow_sheet.write(row_idx + 1, col_idx + 1,
+                                  cash_flows.loc[item, year])
+
+    # Save the Excel file
+    workbook.close()
+
+    return excel_file
+
+
 def main():
-    statement_type = input(
-        "Select financial statement type (Income Statement/Balance Sheet/Cash Flow): ")
     period = input("Select period (Annual/Quarterly): ").lower()
     limit = int(input("Number of past financial statements to analyze: "))
     ticker = input("Please enter the company ticker: ").upper()
 
     if ticker:
-        financial_statements = get_financial_statements(
-            ticker, limit, period, statement_type)
-        if not financial_statements.empty:
+
+        IncomeStatement = get_financial_statements(
+            ticker, limit, period, "Income Statement")
+        BalanceSheet = get_financial_statements(
+            ticker, limit, period, "Balance Sheet")
+        CashFlow = get_financial_statements(
+            ticker, limit, period, "Cash Flow")
+        if not IncomeStatement.empty and not BalanceSheet.empty and not CashFlow.empty:
             print("\nFinancial Statements:")
-            print(financial_statements)
+            print(f"Income Statement:\n{IncomeStatement}\n")
+            print(f"Balance Sheet:\n{BalanceSheet}\n")
+            print(f"Cash Flow:\n{CashFlow}\n")
 
-            financial_summary = generate_financial_summary(
-                financial_statements, statement_type, ticker)
+            IncomeStatementSummary = generate_financial_summary(
+                IncomeStatement, "Income Statement", ticker)
 
-            print(f"\nSummary for {ticker}:\n{financial_summary}\n")
+            CashFlowSummary = generate_financial_summary(
+                CashFlow, "Cash Flow", ticker)
+
+            # Save the summaries to a file as text file
+            with open("response.txt", "w") as f:
+                f.write(
+                    f"Income Statement Summary for {ticker}:\n{IncomeStatementSummary}\n")
+
+                f.write(
+                    f"Cash Flow Summary for {ticker}:\n{CashFlowSummary}\n")
+            # rename the file
+            os.rename("response.txt", f"{ticker}_financial_analysis.txt")
+
+            print(
+                f"\nIncome Statement Summary for {ticker}:\n{IncomeStatementSummary}\n")
+            print(f"\nCash Flow Summary for {ticker}:\n{CashFlowSummary}\n")
+
+            excel_file = build_excel_model(
+                IncomeStatement, BalanceSheet, CashFlow, ticker)
+            print(f"Excel model created: {excel_file}")
         else:
             print(
                 "Unable to fetch financial statements. Please ensure the ticker is correct and try again.")
